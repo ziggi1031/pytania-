@@ -47,7 +47,8 @@ let currentQuestion = null;
 const answers = [];
 let gameStarted = false;
 
-socket.onopen = () => console.log("🟢 Połączono z serwerem WebSocket");
+socket.onopen = () => console.log("🟢 Połączono z WebSocket");
+socket.onerror = (err) => console.error("❌ Błąd WebSocket:", err);
 
 socket.onmessage = (event) => {
 const data = JSON.parse(event.data);
@@ -80,8 +81,8 @@ switch(data.type) {
     break;
 
   case 'SYNC_GAME':
-    data.questions.forEach(q => { questions.push(q); addQuestionToList(q); });
-    data.answers.forEach(a => answers.push(a));
+    data.questions.forEach(q => { if (!questions.includes(q)) { questions.push(q); addQuestionToList(q); } });
+    data.answers.forEach(a => { answers.push(a); });
     currentQuestion = data.questions[data.currentQuestionIndex] || null;
     if (data.gameStarted) {
       document.getElementById('questionPhase').style.display = 'none';
@@ -97,22 +98,34 @@ document.getElementById('addBtn').onclick = () => {
 const input = document.getElementById('questionInput');
 const text = input.value.trim();
 if (!text) return;
-socket.send(JSON.stringify({ type: 'addQuestion', text }));
+if (socket.readyState === WebSocket.OPEN) {
+  socket.send(JSON.stringify({ type: 'addQuestion', text }));
+} else {
+  alert("Połączenie z serwerem jeszcze się nie nawiązało");
+}
 input.value = '';
 };
 
 document.getElementById('startBtn').onclick = () => {
 if (questions.length === 0) { alert('Dodaj przynajmniej jedno pytanie'); return; }
-socket.send(JSON.stringify({ type: 'startGame', questions }));
+if (socket.readyState === WebSocket.OPEN) {
+  socket.send(JSON.stringify({ type: 'startGame' }));
+} else {
+  alert("Połączenie z serwerem jeszcze się nie nawiązało");
+}
 };
 
 document.getElementById('nextBtn').onclick = () => {
 const nick = document.getElementById('nickInput').value.trim();
 const answer = document.getElementById('answerInput').value.trim();
-if (!nick || !answer) return;
+if (!nick || !answer) { alert("Podaj nick i odpowiedź"); return; }
 
-socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
-socket.send(JSON.stringify({ type: 'nextQuestion' }));
+if (socket.readyState === WebSocket.OPEN) {
+  socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
+  socket.send(JSON.stringify({ type: 'nextQuestion' }));
+} else {
+  alert("Połączenie z serwerem jeszcze się nie nawiązało");
+}
 
 document.getElementById('answerInput').value = '';
 };
@@ -137,4 +150,3 @@ answers.forEach(a => {
 
 </body>
 </html>
-
