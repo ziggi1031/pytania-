@@ -40,7 +40,7 @@ input, textarea, button { width:100%; padding:10px; margin:5px 0; }
 </div>
 
 <script>
-const socket = new WebSocket(`ws://${window.location.host}`);
+const socket = new WebSocket(`wss://${window.location.host}`);
 
 const questions = [];
 let currentQuestion = null;
@@ -137,3 +137,4 @@ answers.forEach(a => {
 
 </body>
 </html>
+
