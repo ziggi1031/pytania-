@@ -5,14 +5,12 @@ const WebSocket = require('ws');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Serwujemy klienta
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = app.listen(port, () => {
   console.log(`🌐 Serwer działa na porcie ${port}`);
 });
 
-// WebSocket
 const wss = new WebSocket.Server({ server });
 
 let questions = [];
@@ -75,7 +73,6 @@ wss.on('connection', ws => {
         answersForCurrentQuestion.add(ws);
         broadcast({ type: 'answer', payload: data.payload });
 
-        // jeśli wszyscy odpowiedzieli, przechodzimy do następnego pytania
         if (answersForCurrentQuestion.size === clients.size) {
           answersForCurrentQuestion.clear();
           currentQuestionIndex++;
