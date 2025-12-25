@@ -122,7 +122,7 @@ if (!nick || !answer) { alert("Podaj nick i odpowiedź"); return; }
 
 if (socket.readyState === WebSocket.OPEN) {
   socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
-  socket.send(JSON.stringify({ type: 'nextQuestion' }));
+  // serwer sam decyduje, kiedy wysłać NEXT_QUESTION
 } else {
   alert("Połączenie z serwerem jeszcze się nie nawiązało");
 }
