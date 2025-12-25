@@ -20,6 +20,9 @@ let currentQuestionIndex = 0;
 let answers = [];
 let gameStarted = false;
 
+const clients = new Set();
+let answersForCurrentQuestion = new Set();
+
 function broadcast(data) {
   const msg = JSON.stringify(data);
   wss.clients.forEach(client => {
@@ -41,6 +44,7 @@ function syncGame(ws) {
 
 wss.on('connection', ws => {
   console.log('Nowy gracz połączony');
+  clients.add(ws);
   syncGame(ws);
 
   ws.on('message', message => {
@@ -59,6 +63,7 @@ wss.on('connection', ws => {
           gameStarted = true;
           currentQuestionIndex = 0;
           answers = [];
+          answersForCurrentQuestion.clear();
           broadcast({ type: 'PHASE_QUESTIONS_END' });
           broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
         }
@@ -67,16 +72,18 @@ wss.on('connection', ws => {
       case 'answer':
         if (!gameStarted) return;
         answers.push(data.payload);
+        answersForCurrentQuestion.add(ws);
         broadcast({ type: 'answer', payload: data.payload });
-        break;
 
-      case 'nextQuestion':
-        if (!gameStarted) return;
-        currentQuestionIndex++;
-        if (currentQuestionIndex < questions.length) {
-          broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
-        } else {
-          broadcast({ type: 'SHOW_RESULTS' });
+        // jeśli wszyscy odpowiedzieli, przechodzimy do następnego pytania
+        if (answersForCurrentQuestion.size === clients.size) {
+          answersForCurrentQuestion.clear();
+          currentQuestionIndex++;
+          if (currentQuestionIndex < questions.length) {
+            broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
+          } else {
+            broadcast({ type: 'SHOW_RESULTS' });
+          }
         }
         break;
 
@@ -86,5 +93,9 @@ wss.on('connection', ws => {
     }
   });
 
-  ws.on('close', () => console.log('Gracz rozłączony'));
+  ws.on('close', () => {
+    clients.delete(ws);
+    answersForCurrentQuestion.delete(ws);
+    console.log('Gracz rozłączony');
+  });
 });
