@@ -10,6 +10,7 @@ body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
 h1 { text-align:center; }
 input, textarea, button { width:100%; padding:10px; margin:5px 0; }
 .answer { background:#eee; padding:8px; margin:5px 0; border-radius:4px; }
+#questionMessage { color: green; margin-top: 5px; }
 </style>
 </head>
 <body>
@@ -22,7 +23,7 @@ input, textarea, button { width:100%; padding:10px; margin:5px 0; }
 <input id="questionInput" />
 <button id="addBtn">Dodaj pytanie</button>
 <button id="startBtn">Start gry</button>
-<ul id="questionList"></ul>
+<div id="questionMessage"></div>
 </div>
 
 <div id="answerPhase" style="display:none;">
@@ -46,6 +47,7 @@ const questions = [];
 let currentQuestion = null;
 const answers = [];
 let gameStarted = false;
+let questionCount = 0;
 
 socket.onopen = () => console.log("🟢 Połączono z WebSocket");
 socket.onerror = (err) => console.error("❌ Błąd WebSocket:", err);
@@ -56,7 +58,8 @@ const data = JSON.parse(event.data);
 switch(data.type) {
   case 'addQuestion':
     questions.push(data.text);
-    addQuestionToList(data.text);
+    questionCount++;
+    document.getElementById('questionMessage').textContent = `✅ Dodano pytanie nr ${questionCount}`;
     break;
 
   case 'PHASE_QUESTIONS_END':
@@ -81,7 +84,7 @@ switch(data.type) {
     break;
 
   case 'SYNC_GAME':
-    data.questions.forEach(q => { if (!questions.includes(q)) { questions.push(q); addQuestionToList(q); } });
+    data.questions.forEach(q => { if (!questions.includes(q)) { questions.push(q); questionCount++; } });
     data.answers.forEach(a => { answers.push(a); });
     currentQuestion = data.questions[data.currentQuestionIndex] || null;
     if (data.gameStarted) {
@@ -122,19 +125,13 @@ if (!nick || !answer) { alert("Podaj nick i odpowiedź"); return; }
 
 if (socket.readyState === WebSocket.OPEN) {
   socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
-  // serwer sam decyduje, kiedy wysłać NEXT_QUESTION
+  // serwer sam przechodzi do następnego pytania, gdy wszyscy odpowiedzą
 } else {
   alert("Połączenie z serwerem jeszcze się nie nawiązało");
 }
 
 document.getElementById('answerInput').value = '';
 };
-
-function addQuestionToList(text) {
-const li = document.createElement("li");
-li.textContent = text;
-document.getElementById("questionList").appendChild(li);
-}
 
 function showResults() {
 const div = document.getElementById("results");
