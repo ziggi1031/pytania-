@@ -1,158 +1,137 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gra: Losowe Pytania i Odpowiedzi</title>
-  <style>
-    body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
-    .container { max-width:800px; margin:auto; background:#fff; padding:20px; border-radius:8px; }
-    h1 { text-align:center; }
-    input, textarea, button { width:100%; padding:10px; margin:5px 0; }
-    .answer { background:#eee; padding:8px; margin:5px 0; border-radius:4px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gra: Losowe Pytania i Odpowiedzi</title>
+<style>
+body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
+.container { max-width:800px; margin:auto; background:#fff; padding:20px; border-radius:8px; }
+h1 { text-align:center; }
+input, textarea, button { width:100%; padding:10px; margin:5px 0; }
+.answer { background:#eee; padding:8px; margin:5px 0; border-radius:4px; }
+</style>
 </head>
 <body>
 
 <div class="container">
-  <h1>Gra: Losowe Pytania i Odpowiedzi</h1>
+<h1>Gra: Losowe Pytania i Odpowiedzi</h1>
 
-  <!-- FAZA PYTAŃ -->
-  <div id="questionPhase">
-    <h3>Dodawaj pytania (wpisz "stop")</h3>
-    <input id="questionInput" />
-    <button id="addBtn">Dodaj pytanie</button>
-    <ul id="questionList"></ul>
-  </div>
+<div id="questionPhase">
+<h3>Dodawaj pytania (wpisz "stop")</h3>
+<input id="questionInput" />
+<button id="addBtn">Dodaj pytanie</button>
+<button id="startBtn">Start gry</button>
+<ul id="questionList"></ul>
+</div>
 
-  <!-- FAZA ODPOWIEDZI -->
-  <div id="answerPhase" style="display:none;">
-    <h3>Odpowiedz na pytanie</h3>
-    <input id="nickInput" placeholder="Nick" />
-    <div id="randomQuestion"></div>
-    <textarea id="answerInput" placeholder="Odpowiedź"></textarea>
-    <button id="nextBtn">Wyślij odpowiedź</button>
-  </div>
+<div id="answerPhase" style="display:none;">
+<h3>Odpowiedz na pytanie</h3>
+<input id="nickInput" placeholder="Nick" />
+<div id="randomQuestion"></div>
+<textarea id="answerInput" placeholder="Odpowiedź"></textarea>
+<button id="nextBtn">Wyślij odpowiedź</button>
+</div>
 
-  <!-- WYNIKI -->
-  <div id="resultPhase" style="display:none;">
-    <h3>Wyniki</h3>
-    <div id="results"></div>
-  </div>
+<div id="resultPhase" style="display:none;">
+<h3>Wyniki</h3>
+<div id="results"></div>
+</div>
 </div>
 
 <script>
-/* =======================
-   WEBSOCKET
-======================= */
-
-const socket = new WebSocket("ws://localhost:8080"); // <- ZMIENISZ NA RENDER
-
-socket.onopen = () => {
-  console.log("🟢 Połączono z WebSocket");
-};
-
-socket.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-
-  if (data.type === "addQuestion") {
-    questions.push(data.text);
-    addQuestionToList(data.text);
-  }
-
-  if (data.type === "startGame") {
-    remainingQuestions = shuffleArray([...data.questions]);
-    document.getElementById('questionPhase').style.display = 'none';
-    document.getElementById('answerPhase').style.display = 'block';
-    drawQuestion();
-  }
-
-  if (data.type === "answer") {
-    answers.push(data.payload);
-    showResults();
-  }
-};
-
-/* =======================
-   GRA
-======================= */
+const socket = new WebSocket(`ws://${window.location.host}`);
 
 const questions = [];
-let remainingQuestions = [];
-const answers = [];
 let currentQuestion = null;
+const answers = [];
+let gameStarted = false;
 
-document.getElementById('addBtn').onclick = addQuestion;
-document.getElementById('nextBtn').onclick = sendAnswer;
+socket.onopen = () => console.log("🟢 Połączono z serwerem WebSocket");
 
-function addQuestion() {
-  const input = document.getElementById('questionInput');
-  const text = input.value.trim();
-  if (!text) return;
+socket.onmessage = (event) => {
+const data = JSON.parse(event.data);
 
-  if (text.toLowerCase() === "stop") {
-    socket.send(JSON.stringify({
-      type: "startGame",
-      questions
-    }));
-    return;
-  }
+switch(data.type) {
+  case 'addQuestion':
+    questions.push(data.text);
+    addQuestionToList(data.text);
+    break;
 
-  socket.send(JSON.stringify({
-    type: "addQuestion",
-    text
-  }));
+  case 'PHASE_QUESTIONS_END':
+    gameStarted = true;
+    document.getElementById('questionPhase').style.display = 'none';
+    document.getElementById('answerPhase').style.display = 'block';
+    break;
 
-  input.value = "";
+  case 'NEW_QUESTION':
+    currentQuestion = data.question;
+    document.getElementById('randomQuestion').innerHTML = `<strong>${currentQuestion}</strong>`;
+    break;
+
+  case 'answer':
+    answers.push(data.payload);
+    showResults();
+    break;
+
+  case 'SHOW_RESULTS':
+    document.getElementById('answerPhase').style.display = 'none';
+    document.getElementById('resultPhase').style.display = 'block';
+    break;
+
+  case 'SYNC_GAME':
+    data.questions.forEach(q => { questions.push(q); addQuestionToList(q); });
+    data.answers.forEach(a => answers.push(a));
+    currentQuestion = data.questions[data.currentQuestionIndex] || null;
+    if (data.gameStarted) {
+      document.getElementById('questionPhase').style.display = 'none';
+      document.getElementById('answerPhase').style.display = 'block';
+      if (currentQuestion) document.getElementById('randomQuestion').innerHTML = `<strong>${currentQuestion}</strong>`;
+    }
+    showResults();
+    break;
 }
+};
+
+document.getElementById('addBtn').onclick = () => {
+const input = document.getElementById('questionInput');
+const text = input.value.trim();
+if (!text) return;
+socket.send(JSON.stringify({ type: 'addQuestion', text }));
+input.value = '';
+};
+
+document.getElementById('startBtn').onclick = () => {
+if (questions.length === 0) { alert('Dodaj przynajmniej jedno pytanie'); return; }
+socket.send(JSON.stringify({ type: 'startGame', questions }));
+};
+
+document.getElementById('nextBtn').onclick = () => {
+const nick = document.getElementById('nickInput').value.trim();
+const answer = document.getElementById('answerInput').value.trim();
+if (!nick || !answer) return;
+
+socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
+socket.send(JSON.stringify({ type: 'nextQuestion' }));
+
+document.getElementById('answerInput').value = '';
+};
 
 function addQuestionToList(text) {
-  const li = document.createElement("li");
-  li.textContent = text;
-  document.getElementById("questionList").appendChild(li);
-}
-
-function drawQuestion() {
-  if (remainingQuestions.length === 0) {
-    document.getElementById("answerPhase").style.display = "none";
-    document.getElementById("resultPhase").style.display = "block";
-    return;
-  }
-  currentQuestion = remainingQuestions.pop();
-  document.getElementById("randomQuestion").innerHTML = `<strong>${currentQuestion}</strong>`;
-}
-
-function sendAnswer() {
-  const nick = document.getElementById("nickInput").value.trim();
-  const answer = document.getElementById("answerInput").value.trim();
-  if (!nick || !answer) return;
-
-  socket.send(JSON.stringify({
-    type: "answer",
-    payload: { question: currentQuestion, answer, nick }
-  }));
-
-  document.getElementById("answerInput").value = "";
-  drawQuestion();
+const li = document.createElement("li");
+li.textContent = text;
+document.getElementById("questionList").appendChild(li);
 }
 
 function showResults() {
-  const div = document.getElementById("results");
-  div.innerHTML = "";
-  answers.forEach(a => {
-    const el = document.createElement("div");
-    el.className = "answer";
-    el.innerHTML = `<strong>${a.question}</strong><br>${a.answer} <em>(${a.nick})</em>`;
-    div.appendChild(el);
-  });
-}
-
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
+const div = document.getElementById("results");
+div.innerHTML = '';
+answers.forEach(a => {
+  const el = document.createElement("div");
+  el.className = "answer";
+  el.innerHTML = `<strong>${a.question}</strong><br>${a.answer} <em>(${a.nick})</em>`;
+  div.appendChild(el);
+});
 }
 </script>
 
