@@ -2,11 +2,12 @@
 const WebSocket = require('ws');
 
 const wss = new WebSocket.Server({ port: 8080 });
-console.log("Serwer WebSocket działa na porcie 8080");
+console.log("🟢 Serwer WebSocket działa na porcie 8080");
 
 let questions = [];
 let currentQuestionIndex = 0;
 let answers = [];
+let gameStarted = false;
 
 // Funkcja wysyłająca komunikat do wszystkich graczy
 function broadcast(data) {
@@ -18,27 +19,29 @@ function broadcast(data) {
   });
 }
 
+// Funkcja synchronizująca nowego gracza
+function syncGame(ws) {
+  ws.send(JSON.stringify({
+    type: 'SYNC_GAME',
+    questions,
+    currentQuestionIndex,
+    answers,
+    gameStarted
+  }));
+}
+
 wss.on('connection', ws => {
   console.log('Nowy gracz połączony');
-
-  // Wyślij aktualne pytania i indeks, jeśli gra już trwa
-  if (questions.length > 0) {
-    ws.send(JSON.stringify({
-      type: "SYNC_GAME",
-      questions,
-      currentQuestionIndex,
-      answers
-    }));
-  }
+  syncGame(ws);
 
   ws.on('message', message => {
     const data = JSON.parse(message);
 
     switch (data.type) {
 
-      // Dodawanie pytania
+      // Dodawanie pytania (tylko przed startem gry)
       case 'addQuestion':
-        if (!questions.includes(data.text)) {
+        if (!gameStarted && !questions.includes(data.text)) {
           questions.push(data.text);
           broadcast({ type: 'addQuestion', text: data.text });
         }
@@ -46,28 +49,36 @@ wss.on('connection', ws => {
 
       // Start gry
       case 'startGame':
-        questions = data.questions;
-        currentQuestionIndex = 0;
-        answers = [];
-        broadcast({ type: 'PHASE_QUESTIONS_END', questions });
-        // Wyślij pierwsze pytanie
-        broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
+        if (!gameStarted && questions.length > 0) {
+          gameStarted = true;
+          currentQuestionIndex = 0;
+          answers = [];
+          broadcast({ type: 'PHASE_QUESTIONS_END' });
+          broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
+        }
         break;
 
       // Odpowiedź gracza
       case 'answer':
+        if (!gameStarted) return;
         answers.push(data.payload);
         broadcast({ type: 'answer', payload: data.payload });
         break;
 
-      // Następne pytanie
+      // Następne pytanie (tylko host lub sterujący)
       case 'nextQuestion':
+        if (!gameStarted) return;
         currentQuestionIndex++;
         if (currentQuestionIndex < questions.length) {
           broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
         } else {
           broadcast({ type: 'SHOW_RESULTS' });
         }
+        break;
+
+      // Synchronizacja nowego gracza
+      case 'syncRequest':
+        syncGame(ws);
         break;
     }
   });
