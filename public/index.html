@@ -10,7 +10,7 @@ body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
 h1 { text-align:center; }
 input, textarea, button { width:100%; padding:10px; margin:5px 0; }
 .answer { background:#eee; padding:8px; margin:5px 0; border-radius:4px; }
-#questionMessage { color: green; margin-top: 5px; }
+#questionMessage, #answerMessage { color: green; margin-top:5px; }
 </style>
 </head>
 <body>
@@ -18,6 +18,7 @@ input, textarea, button { width:100%; padding:10px; margin:5px 0; }
 <div class="container">
 <h1>Gra: Losowe Pytania i Odpowiedzi</h1>
 
+<!-- FAZA PYTAŃ -->
 <div id="questionPhase">
 <h3>Dodawaj pytania (wpisz "stop")</h3>
 <input id="questionInput" />
@@ -26,14 +27,17 @@ input, textarea, button { width:100%; padding:10px; margin:5px 0; }
 <div id="questionMessage"></div>
 </div>
 
+<!-- FAZA ODPOWIEDZI -->
 <div id="answerPhase" style="display:none;">
 <h3>Odpowiedz na pytanie</h3>
 <input id="nickInput" placeholder="Nick" />
 <div id="randomQuestion"></div>
 <textarea id="answerInput" placeholder="Odpowiedź"></textarea>
 <button id="nextBtn">Wyślij odpowiedź</button>
+<div id="answerMessage"></div>
 </div>
 
+<!-- WYNIKI -->
 <div id="resultPhase" style="display:none;">
 <h3>Wyniki</h3>
 <div id="results"></div>
@@ -71,6 +75,12 @@ switch(data.type) {
   case 'NEW_QUESTION':
     currentQuestion = data.question;
     document.getElementById('randomQuestion').innerHTML = `<strong>${currentQuestion}</strong>`;
+    
+    // odblokuj pola dla nowego pytania
+    document.getElementById('answerInput').disabled = false;
+    document.getElementById('nextBtn').disabled = false;
+    document.getElementById('answerInput').value = '';
+    document.getElementById('answerMessage').textContent = '';
     break;
 
   case 'answer':
@@ -121,16 +131,25 @@ if (socket.readyState === WebSocket.OPEN) {
 document.getElementById('nextBtn').onclick = () => {
 const nick = document.getElementById('nickInput').value.trim();
 const answer = document.getElementById('answerInput').value.trim();
+const answerInput = document.getElementById('answerInput');
+const nextBtn = document.getElementById('nextBtn');
+const answerMessage = document.getElementById('answerMessage');
+
 if (!nick || !answer) { alert("Podaj nick i odpowiedź"); return; }
 
 if (socket.readyState === WebSocket.OPEN) {
   socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
-  // serwer sam przechodzi do następnego pytania, gdy wszyscy odpowiedzą
+
+  // komunikat potwierdzający zapisanie odpowiedzi
+  answerMessage.textContent = "Odpowiedź zapisana ✅";
+
+  // zablokowanie pola i przycisku, żeby nie wysyłać ponownie
+  answerInput.disabled = true;
+  nextBtn.disabled = true;
+
 } else {
   alert("Połączenie z serwerem jeszcze się nie nawiązało");
 }
-
-document.getElementById('answerInput').value = '';
 };
 
 function showResults() {
