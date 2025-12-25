@@ -42,69 +42,78 @@
 </div>
 
 <script>
-/* =======================
-   WEBSOCKET
-======================= */
+const socket = new WebSocket("ws://localhost:8080"); // <- zmień na Render po hostowaniu
 
-const socket = new WebSocket("ws://localhost:8080"); // <- ZMIENISZ NA RENDER
+const questions = [];
+let currentQuestion = null;
+const answers = [];
 
-socket.onopen = () => {
-  console.log("🟢 Połączono z WebSocket");
-};
+socket.onopen = () => console.log("🟢 Połączono z serwerem WebSocket");
 
 socket.onmessage = (event) => {
   const data = JSON.parse(event.data);
 
-  if (data.type === "addQuestion") {
-    questions.push(data.text);
-    addQuestionToList(data.text);
-  }
+  switch(data.type) {
 
-  if (data.type === "startGame") {
-    remainingQuestions = shuffleArray([...data.questions]);
-    document.getElementById('questionPhase').style.display = 'none';
-    document.getElementById('answerPhase').style.display = 'block';
-    drawQuestion();
-  }
+    case 'addQuestion':
+      questions.push(data.text);
+      addQuestionToList(data.text);
+      break;
 
-  if (data.type === "answer") {
-    answers.push(data.payload);
-    showResults();
+    case 'PHASE_QUESTIONS_END':
+      document.getElementById('questionPhase').style.display = 'none';
+      document.getElementById('answerPhase').style.display = 'block';
+      break;
+
+    case 'NEW_QUESTION':
+      currentQuestion = data.question;
+      document.getElementById('randomQuestion').innerHTML = `<strong>${currentQuestion}</strong>`;
+      break;
+
+    case 'answer':
+      answers.push(data.payload);
+      showResults();
+      break;
+
+    case 'SHOW_RESULTS':
+      document.getElementById('answerPhase').style.display = 'none';
+      document.getElementById('resultPhase').style.display = 'block';
+      break;
+
+    case 'SYNC_GAME':
+      // Synchronizacja nowego gracza
+      data.questions.forEach(q => { questions.push(q); addQuestionToList(q); });
+      currentQuestion = data.questions[data.currentQuestionIndex] || null;
+      data.answers.forEach(a => answers.push(a));
+      showResults();
+      break;
   }
 };
 
-/* =======================
-   GRA
-======================= */
-
-const questions = [];
-let remainingQuestions = [];
-const answers = [];
-let currentQuestion = null;
-
-document.getElementById('addBtn').onclick = addQuestion;
-document.getElementById('nextBtn').onclick = sendAnswer;
-
-function addQuestion() {
+document.getElementById('addBtn').onclick = () => {
   const input = document.getElementById('questionInput');
   const text = input.value.trim();
   if (!text) return;
 
-  if (text.toLowerCase() === "stop") {
-    socket.send(JSON.stringify({
-      type: "startGame",
-      questions
-    }));
+  if (text.toLowerCase() === 'stop') {
+    socket.send(JSON.stringify({ type: 'startGame', questions }));
     return;
   }
 
-  socket.send(JSON.stringify({
-    type: "addQuestion",
-    text
-  }));
+  socket.send(JSON.stringify({ type: 'addQuestion', text }));
+  input.value = '';
+};
 
-  input.value = "";
-}
+document.getElementById('nextBtn').onclick = () => {
+  const nick = document.getElementById('nickInput').value.trim();
+  const answer = document.getElementById('answerInput').value.trim();
+  if (!nick || !answer) return;
+
+  socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
+  socket.send(JSON.stringify({ type: 'nextQuestion' }));
+
+  document.getElementById('answerInput').value = '';
+};
 
 function addQuestionToList(text) {
   const li = document.createElement("li");
@@ -112,47 +121,15 @@ function addQuestionToList(text) {
   document.getElementById("questionList").appendChild(li);
 }
 
-function drawQuestion() {
-  if (remainingQuestions.length === 0) {
-    document.getElementById("answerPhase").style.display = "none";
-    document.getElementById("resultPhase").style.display = "block";
-    return;
-  }
-  currentQuestion = remainingQuestions.pop();
-  document.getElementById("randomQuestion").innerHTML = `<strong>${currentQuestion}</strong>`;
-}
-
-function sendAnswer() {
-  const nick = document.getElementById("nickInput").value.trim();
-  const answer = document.getElementById("answerInput").value.trim();
-  if (!nick || !answer) return;
-
-  socket.send(JSON.stringify({
-    type: "answer",
-    payload: { question: currentQuestion, answer, nick }
-  }));
-
-  document.getElementById("answerInput").value = "";
-  drawQuestion();
-}
-
 function showResults() {
   const div = document.getElementById("results");
-  div.innerHTML = "";
+  div.innerHTML = '';
   answers.forEach(a => {
     const el = document.createElement("div");
     el.className = "answer";
     el.innerHTML = `<strong>${a.question}</strong><br>${a.answer} <em>(${a.nick})</em>`;
     div.appendChild(el);
   });
-}
-
-function shuffleArray(array) {
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
 }
 </script>
 
