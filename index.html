@@ -1,87 +1,141 @@
-// server.js
-const WebSocket = require('ws');
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gra: Losowe Pytania i Odpowiedzi</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f4f4f4; padding:20px; }
+    .container { max-width:800px; margin:auto; background:#fff; padding:20px; border-radius:8px; }
+    h1 { text-align:center; }
+    input, textarea, button { width:100%; padding:10px; margin:5px 0; }
+    .answer { background:#eee; padding:8px; margin:5px 0; border-radius:4px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Gra: Losowe Pytania i Odpowiedzi</h1>
 
-const wss = new WebSocket.Server({ port: 8080 });
-console.log("🟢 Serwer WebSocket działa na porcie 8080");
+  <div id="questionPhase">
+    <h3>Dodawaj pytania (wpisz "stop" aby zakończyć)</h3>
+    <input id="questionInput" />
+    <button id="addBtn">Dodaj pytanie</button>
+    <button id="startBtn">Start gry</button>
+    <ul id="questionList"></ul>
+  </div>
 
-let questions = [];
-let currentQuestionIndex = 0;
-let answers = [];
+  <div id="answerPhase" style="display:none;">
+    <h3>Odpowiedz na pytanie</h3>
+    <input id="nickInput" placeholder="Nick" />
+    <div id="randomQuestion"></div>
+    <textarea id="answerInput" placeholder="Odpowiedź"></textarea>
+    <button id="nextBtn">Wyślij odpowiedź</button>
+  </div>
+
+  <div id="resultPhase" style="display:none;">
+    <h3>Wyniki</h3>
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+const socket = new WebSocket("ws://localhost:8080"); // <- zmień na host Render po wdrożeniu
+
+const questions = [];
+let currentQuestion = null;
+const answers = [];
 let gameStarted = false;
 
-// Funkcja wysyłająca komunikat do wszystkich graczy
-function broadcast(data) {
-  const msg = JSON.stringify(data);
-  wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(msg);
-    }
-  });
+socket.onopen = () => console.log("🟢 Połączono z serwerem WebSocket");
+
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  switch(data.type) {
+
+    case 'addQuestion':
+      questions.push(data.text);
+      addQuestionToList(data.text);
+      break;
+
+    case 'PHASE_QUESTIONS_END':
+      gameStarted = true;
+      document.getElementById('questionPhase').style.display = 'none';
+      document.getElementById('answerPhase').style.display = 'block';
+      break;
+
+    case 'NEW_QUESTION':
+      currentQuestion = data.question;
+      document.getElementById('randomQuestion').innerHTML = `<strong>${currentQuestion}</strong>`;
+      break;
+
+    case 'answer':
+      answers.push(data.payload);
+      showResults();
+      break;
+
+    case 'SHOW_RESULTS':
+      document.getElementById('answerPhase').style.display = 'none';
+      document.getElementById('resultPhase').style.display = 'block';
+      break;
+
+    case 'SYNC_GAME':
+      data.questions.forEach(q => { questions.push(q); addQuestionToList(q); });
+      data.answers.forEach(a => answers.push(a));
+      currentQuestion = data.questions[data.currentQuestionIndex] || null;
+      if (data.gameStarted) {
+        document.getElementById('questionPhase').style.display = 'none';
+        document.getElementById('answerPhase').style.display = 'block';
+        if (currentQuestion) document.getElementById('randomQuestion').innerHTML = `<strong>${currentQuestion}</strong>`;
+      }
+      showResults();
+      break;
+  }
+};
+
+document.getElementById('addBtn').onclick = () => {
+  const input = document.getElementById('questionInput');
+  const text = input.value.trim();
+  if (!text) return;
+  socket.send(JSON.stringify({ type: 'addQuestion', text }));
+  input.value = '';
+};
+
+document.getElementById('startBtn').onclick = () => {
+  if (questions.length === 0) {
+    alert('Dodaj przynajmniej jedno pytanie');
+    return;
+  }
+  socket.send(JSON.stringify({ type: 'startGame', questions }));
+};
+
+document.getElementById('nextBtn').onclick = () => {
+  const nick = document.getElementById('nickInput').value.trim();
+  const answer = document.getElementById('answerInput').value.trim();
+  if (!nick || !answer) return;
+
+  socket.send(JSON.stringify({ type: 'answer', payload: { question: currentQuestion, answer, nick } }));
+  socket.send(JSON.stringify({ type: 'nextQuestion' }));
+
+  document.getElementById('answerInput').value = '';
+};
+
+function addQuestionToList(text) {
+  const li = document.createElement("li");
+  li.textContent = text;
+  document.getElementById("questionList").appendChild(li);
 }
 
-// Funkcja synchronizująca nowego gracza
-function syncGame(ws) {
-  ws.send(JSON.stringify({
-    type: 'SYNC_GAME',
-    questions,
-    currentQuestionIndex,
-    answers,
-    gameStarted
-  }));
-}
-
-wss.on('connection', ws => {
-  console.log('Nowy gracz połączony');
-  syncGame(ws);
-
-  ws.on('message', message => {
-    const data = JSON.parse(message);
-
-    switch (data.type) {
-
-      // Dodawanie pytania (tylko przed startem gry)
-      case 'addQuestion':
-        if (!gameStarted && !questions.includes(data.text)) {
-          questions.push(data.text);
-          broadcast({ type: 'addQuestion', text: data.text });
-        }
-        break;
-
-      // Start gry
-      case 'startGame':
-        if (!gameStarted && questions.length > 0) {
-          gameStarted = true;
-          currentQuestionIndex = 0;
-          answers = [];
-          broadcast({ type: 'PHASE_QUESTIONS_END' });
-          broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
-        }
-        break;
-
-      // Odpowiedź gracza
-      case 'answer':
-        if (!gameStarted) return;
-        answers.push(data.payload);
-        broadcast({ type: 'answer', payload: data.payload });
-        break;
-
-      // Następne pytanie (tylko host lub sterujący)
-      case 'nextQuestion':
-        if (!gameStarted) return;
-        currentQuestionIndex++;
-        if (currentQuestionIndex < questions.length) {
-          broadcast({ type: 'NEW_QUESTION', question: questions[currentQuestionIndex] });
-        } else {
-          broadcast({ type: 'SHOW_RESULTS' });
-        }
-        break;
-
-      // Synchronizacja nowego gracza
-      case 'syncRequest':
-        syncGame(ws);
-        break;
-    }
+function showResults() {
+  const div = document.getElementById("results");
+  div.innerHTML = '';
+  answers.forEach(a => {
+    const el = document.createElement("div");
+    el.className = "answer";
+    el.innerHTML = `<strong>${a.question}</strong><br>${a.answer} <em>(${a.nick})</em>`;
+    div.appendChild(el);
   });
-
-  ws.on('close', () => console.log('Gracz rozłączony'));
-});
+}
+</script>
+</body>
+</html>
