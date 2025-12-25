@@ -1,15 +1,25 @@
-// server.js
+const express = require('express');
+const path = require('path');
 const WebSocket = require('ws');
 
-const wss = new WebSocket.Server({ port: 8080 });
-console.log("🟢 Serwer WebSocket działa na porcie 8080");
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Serwujemy klienta
+app.use(express.static(path.join(__dirname, 'public')));
+
+const server = app.listen(port, () => {
+  console.log(`🌐 Serwer działa na porcie ${port}`);
+});
+
+// WebSocket
+const wss = new WebSocket.Server({ server });
 
 let questions = [];
 let currentQuestionIndex = 0;
 let answers = [];
 let gameStarted = false;
 
-// Funkcja wysyłająca komunikat do wszystkich graczy
 function broadcast(data) {
   const msg = JSON.stringify(data);
   wss.clients.forEach(client => {
@@ -19,7 +29,6 @@ function broadcast(data) {
   });
 }
 
-// Funkcja synchronizująca nowego gracza
 function syncGame(ws) {
   ws.send(JSON.stringify({
     type: 'SYNC_GAME',
@@ -38,8 +47,6 @@ wss.on('connection', ws => {
     const data = JSON.parse(message);
 
     switch (data.type) {
-
-      // Dodawanie pytania (tylko przed startem gry)
       case 'addQuestion':
         if (!gameStarted && !questions.includes(data.text)) {
           questions.push(data.text);
@@ -47,7 +54,6 @@ wss.on('connection', ws => {
         }
         break;
 
-      // Start gry
       case 'startGame':
         if (!gameStarted && questions.length > 0) {
           gameStarted = true;
@@ -58,14 +64,12 @@ wss.on('connection', ws => {
         }
         break;
 
-      // Odpowiedź gracza
       case 'answer':
         if (!gameStarted) return;
         answers.push(data.payload);
         broadcast({ type: 'answer', payload: data.payload });
         break;
 
-      // Następne pytanie (tylko host lub sterujący)
       case 'nextQuestion':
         if (!gameStarted) return;
         currentQuestionIndex++;
@@ -76,7 +80,6 @@ wss.on('connection', ws => {
         }
         break;
 
-      // Synchronizacja nowego gracza
       case 'syncRequest':
         syncGame(ws);
         break;
